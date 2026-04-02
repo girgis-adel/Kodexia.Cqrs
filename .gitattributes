@@ -3,6 +3,20 @@
 ###############################################################################
 * text eol=crlf
 
+# Binary files — must not have line-ending conversion
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.bmp   binary
+*.webp  binary
+*.nupkg binary
+*.snupkg binary
+*.dll   binary
+*.exe   binary
+*.zip   binary
+
 ###############################################################################
 # Set default behavior for command prompt diff.
 #
