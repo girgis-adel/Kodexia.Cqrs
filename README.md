@@ -789,17 +789,53 @@ Kodexia.Cqrs/
 
 Contributions are welcome. Please open an issue first to discuss significant changes.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/my-feature`)
-3. Ensure all tests pass (`dotnet test`)
-4. Ensure code is formatted (`dotnet format`)
-5. Submit a pull request
+### Branch protection
+
+The `main` branch is protected. All changes must go through a **pull request** — direct pushes are blocked. Every PR must pass the following automated checks before merging:
+
+| Check | Workflow | What it verifies |
+|---|---|---|
+| **Build & Test** | `ci.yml` | Builds (warnings-as-errors) and runs all tests on **Ubuntu** and **Windows** |
+| **PR Validation** | `pr-validation.yml` | Code formatting (`dotnet format`), build, and tests |
+
+### How to contribute
+
+1. **Fork** the repository
+2. Create a feature branch from `main`:
+   ```shell
+   git checkout -b feature/my-feature
+   ```
+3. Make your changes
+4. Ensure code formatting passes:
+   ```shell
+   dotnet format --verify-no-changes
+   ```
+5. Ensure all tests pass:
+   ```shell
+   dotnet test -c Release --verbosity normal
+   ```
+6. Commit with a clear message:
+   ```
+   feat: add support for keyed services
+   fix: handle null response in post-processor
+   docs: update migration guide for v2
+   test: add exception hierarchy coverage
+   ```
+7. Push your branch and **open a pull request** against `main`
+
+### PR requirements
+
+- ✅ All CI checks must pass (build, test, format)
+- ✅ At least **1 approving review** from a maintainer
+- ✅ Branch must be **up to date** with `main` before merging
+- ✅ Conversations must be resolved
+- 🔀 Merge strategy: **Squash and merge** (keeps `main` history linear)
 
 ### Running the tests locally
 
 ```shell
 dotnet restore
-dotnet build -c Release
+dotnet build -c Release -p:TreatWarningsAsErrors=true
 dotnet test -c Release --verbosity normal
 ```
 
