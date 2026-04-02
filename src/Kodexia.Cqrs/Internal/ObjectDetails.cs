@@ -20,8 +20,10 @@ internal sealed class ObjectDetails : IComparer<ObjectDetails>
 
     public int Compare(ObjectDetails? x, ObjectDetails? y)
     {
-        if (x is null) return 1;
-        if (y is null) return -1;
+        if (x is null)
+            return 1;
+        if (y is null)
+            return -1;
         return CompareByAssembly(x, y) ?? CompareByNamespace(x, y) ?? CompareByLocation(x, y);
     }
 
@@ -30,9 +32,12 @@ internal sealed class ObjectDetails : IComparer<ObjectDetails>
         var xMatch = x.AssemblyName == AssemblyName;
         var yMatch = y.AssemblyName == AssemblyName;
 
-        if (xMatch && !yMatch) return -1;
-        if (!xMatch && yMatch) return 1;
-        if (!xMatch && !yMatch) return 0;
+        if (xMatch && !yMatch)
+            return -1;
+        if (!xMatch && yMatch)
+            return 1;
+        if (!xMatch && !yMatch)
+            return 0;
         return null;
     }
 
@@ -44,9 +49,12 @@ internal sealed class ObjectDetails : IComparer<ObjectDetails>
         var xMatch = x.Location.StartsWith(Location, StringComparison.Ordinal);
         var yMatch = y.Location.StartsWith(Location, StringComparison.Ordinal);
 
-        if (xMatch && !yMatch) return -1;
-        if (!xMatch && yMatch) return 1;
-        if (xMatch && yMatch) return 0;
+        if (xMatch && !yMatch)
+            return -1;
+        if (!xMatch && yMatch)
+            return 1;
+        if (xMatch && yMatch)
+            return 0;
         return null;
     }
 
@@ -58,10 +66,14 @@ internal sealed class ObjectDetails : IComparer<ObjectDetails>
         var xMatch = Location.StartsWith(x.Location, StringComparison.Ordinal);
         var yMatch = Location.StartsWith(y.Location, StringComparison.Ordinal);
 
-        if (xMatch && !yMatch) return -1;
-        if (!xMatch && yMatch) return 1;
-        if (x.Location.Length > y.Location.Length) return -1;
-        if (x.Location.Length < y.Location.Length) return 1;
+        if (xMatch && !yMatch)
+            return -1;
+        if (!xMatch && yMatch)
+            return 1;
+        if (x.Location.Length > y.Location.Length)
+            return -1;
+        if (x.Location.Length < y.Location.Length)
+            return 1;
         return 0;
     }
 }

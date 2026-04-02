@@ -46,10 +46,12 @@ internal static class ServiceRegistrar
         {
             foreach (var @interface in type.GetInterfaces())
             {
-                if (!@interface.IsGenericType) continue;
+                if (!@interface.IsGenericType)
+                    continue;
 
                 var openInterface = @interface.GetGenericTypeDefinition();
-                if (!allOpenInterfaces.Contains(openInterface)) continue;
+                if (!allOpenInterfaces.Contains(openInterface))
+                    continue;
 
                 if (type.IsGenericTypeDefinition)
                 {
