@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kodexia.Cqrs/Kodexia.Cqrs.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kodexia.Cqrs.Tests/Kodexia.Cqrs.Tests.csproj" />
+  </Folder>
+</Solution>

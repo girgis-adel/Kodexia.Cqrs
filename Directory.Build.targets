@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    Inject pack files (icon, readme, license) only into projects inside src/.
+    Test projects and other non-packable projects are unaffected.
+  -->
+  <ItemGroup Condition="$(MSBuildProjectDirectory.Contains('src'))">
+    <None Include="$(MSBuildThisFileDirectory)LICENSE.md"
+          Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)README.md"
+          Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)KodexiaCqrs.png"
+          Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+</Project>

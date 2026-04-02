@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'        # stable:    v1.2.3
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'      # pre-rel:   v1.2.3-preview.1
+
+permissions:
+  contents: write    # create GitHub Release
+  packages: write    # (optional) GitHub Packages
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  release:
+    name: Pack & Publish to NuGet
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      # Strip the leading 'v': v1.2.3 → 1.2.3, v1.2.3-preview.1 → 1.2.3-preview.1
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "🏷️  Releasing version: $VERSION"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: >
+          dotnet build
+          --no-restore
+          -c Release
+          -p:Version=${{ steps.version.outputs.VERSION }}
+          -p:TreatWarningsAsErrors=true
+
+      - name: Run tests
+        run: >
+          dotnet test
+          --no-build
+          -c Release
+          --verbosity normal
+
+      - name: Pack
+        run: >
+          dotnet pack src/Kodexia.Cqrs/Kodexia.Cqrs.csproj
+          -c Release
+          --no-build
+          -o ./nupkgs
+          -p:Version=${{ steps.version.outputs.VERSION }}
+
+      - name: List produced packages
+        run: ls -la ./nupkgs
+
+      - name: Publish to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push ./nupkgs/*.nupkg
+          --api-key "$NUGET_API_KEY"
+          --source "https://api.nuget.org/v3/index.json"
+          --skip-duplicate
+
+      - name: Push symbols (.snupkg)
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push ./nupkgs/*.snupkg
+          --api-key "$NUGET_API_KEY"
+          --source "https://api.nuget.org/v3/index.json"
+          --skip-duplicate
+        continue-on-error: true   # .snupkg may already exist for this version
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Kodexia.Cqrs ${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## 📦 Kodexia.Cqrs ${{ steps.version.outputs.VERSION }}
+
+            Install via NuGet:
+            ```shell
+            dotnet add package Kodexia.Cqrs --version ${{ steps.version.outputs.VERSION }}
+            ```
+
+            🔗 [NuGet Gallery](https://www.nuget.org/packages/Kodexia.Cqrs/${{ steps.version.outputs.VERSION }})
+          files: ./nupkgs/*.nupkg
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
