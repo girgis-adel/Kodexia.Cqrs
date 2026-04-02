@@ -4,66 +4,66 @@ namespace Kodexia.Cqrs.Tests.Dispatching;
 
 public class StreamTests
 {
-    private static ICqrsManager BuildManager(Action<CqrsManagerServiceConfiguration> configure)
+    private static IHubExchange BuildExchange(Action<HubServiceConfiguration> configure)
     {
         var services = new ServiceCollection();
-        services.AddKodexiaCqrs(configure);
-        return services.BuildServiceProvider().GetRequiredService<ICqrsManager>();
+        services.AddKodexiaHub(configure);
+        return services.BuildServiceProvider().GetRequiredService<IHubExchange>();
     }
 
     [Fact]
-    public async Task CreateStreamAsync_Untyped_YieldsBoxedItems()
+    public async Task OpenStreamAsync_Untyped_YieldsBoxedItems()
     {
-        var manager = BuildManager(cfg =>
-            cfg.RegisterServicesFromAssemblyContaining<StreamTests>());
+        var exchange = BuildExchange(cfg =>
+            cfg.RegisterHubClassesFromAssemblyContaining<StreamTests>());
 
         var items = new List<object?>();
-        await foreach (var item in manager.CreateStreamAsync((object)new NumberStreamRequest(3)))
+        await foreach (var item in exchange.OpenStreamAsync((object)new NumberStreamSource(3)))
             items.Add(item);
 
         items.Should().BeEquivalentTo(new object[] { 1, 2, 3 });
     }
 
     [Fact]
-    public async Task CreateStreamAsync_EmptyStream_YieldsNoItems()
+    public async Task OpenStreamAsync_EmptyStream_YieldsNoItems()
     {
-        var manager = BuildManager(cfg =>
-            cfg.RegisterServicesFromAssemblyContaining<StreamTests>());
+        var exchange = BuildExchange(cfg =>
+            cfg.RegisterHubClassesFromAssemblyContaining<StreamTests>());
 
         var items = new List<int>();
-        await foreach (var item in manager.CreateStreamAsync(new NumberStreamRequest(0)))
+        await foreach (var item in exchange.OpenStreamAsync(new NumberStreamSource(0)))
             items.Add(item);
 
         items.Should().BeEmpty();
     }
 
     [Fact]
-    public void CreateStreamAsync_NullRequest_ThrowsArgumentNullException()
+    public void OpenStreamAsync_NullSource_ThrowsArgumentNullException()
     {
-        var manager = BuildManager(cfg =>
-            cfg.RegisterServicesFromAssemblyContaining<StreamTests>());
+        var exchange = BuildExchange(cfg =>
+            cfg.RegisterHubClassesFromAssemblyContaining<StreamTests>());
 
-        var act = () => manager.CreateStreamAsync((IStreamRequest<int>)null!);
+        var act = () => exchange.OpenStreamAsync((IStreamSource<int>)null!);
 
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
-    public async Task CreateStreamAsync_WithBehavior_ExecutesBehavior()
+    public async Task OpenStreamAsync_WithInterceptor_ExecutesInterceptor()
     {
         var log = new List<string>();
 
         var services = new ServiceCollection();
         services.AddScoped(_ => log);
-        services.AddKodexiaCqrs(cfg =>
+        services.AddKodexiaHub(cfg =>
         {
-            cfg.RegisterServicesFromAssemblyContaining<StreamTests>();
-            cfg.AddOpenStreamBehavior(typeof(StreamLoggingBehavior<,>));
+            cfg.RegisterHubClassesFromAssemblyContaining<StreamTests>();
+            cfg.AddOpenStreamInterceptor(typeof(StreamLoggingInterceptor<,>));
         });
 
-        var manager = services.BuildServiceProvider().GetRequiredService<ICqrsManager>();
+        var exchange = services.BuildServiceProvider().GetRequiredService<IHubExchange>();
         var items = new List<int>();
-        await foreach (var item in manager.CreateStreamAsync(new NumberStreamRequest(2)))
+        await foreach (var item in exchange.OpenStreamAsync(new NumberStreamSource(2)))
             items.Add(item);
 
         items.Should().BeEquivalentTo([1, 2]);
@@ -71,15 +71,15 @@ public class StreamTests
     }
 }
 
-// ─── Test Fixtures ────────────────────────────────────────────────────────────
+// --- Test Fixtures ---
 
-public record NumberStreamRequest(int Count) : IStreamRequest<int>;
-public class NumberStreamHandler : IStreamRequestHandler<NumberStreamRequest, int>
+public record NumberStreamSource(int Count) : IStreamSource<int>;
+public class NumberStreamProvider : IProvider<NumberStreamSource, int>
 {
-    public async IAsyncEnumerable<int> HandleAsync(NumberStreamRequest request,
+    public async IAsyncEnumerable<int> ProvideAsync(NumberStreamSource source,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        for (var i = 1; i <= request.Count; i++)
+        for (var i = 1; i <= source.Count; i++)
         {
             await Task.Yield();
             yield return i;
@@ -87,12 +87,12 @@ public class NumberStreamHandler : IStreamRequestHandler<NumberStreamRequest, in
     }
 }
 
-public class StreamLoggingBehavior<TRequest, TResponse>(List<string> log)
-    : IStreamPipelineBehavior<TRequest, TResponse>
-    where TRequest : notnull
+public class StreamLoggingInterceptor<TSource, TResponse>(List<string> log)
+    : IStreamInterceptor<TSource, TResponse>
+    where TSource : IStreamSource<TResponse>
 {
-    public async IAsyncEnumerable<TResponse> HandleAsync(TRequest request,
-        StreamHandlerDelegate<TResponse> next,
+    public async IAsyncEnumerable<TResponse> InterceptAsync(TSource source,
+        StreamNextDelegate<TResponse> next,
         [EnumeratorCancellation] CancellationToken ct)
     {
         log.Add("stream-before");

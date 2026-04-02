@@ -5,33 +5,32 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Kodexia.Cqrs.Internal;
 
 /// <summary>
-/// Internal helper that performs assembly scanning and required service registration.
-/// Not part of the public API — subject to change without notice.
+/// Internal helper that performs assembly scanning and Hub service registration.
 /// </summary>
 internal static class ServiceRegistrar
 {
-    public static void AddCqrsClasses(IServiceCollection services, CqrsManagerServiceConfiguration configuration)
+    public static void AddHubClasses(IServiceCollection services, HubServiceConfiguration configuration)
     {
         var assembliesToScan = configuration.AssembliesToRegister.Distinct().ToArray();
 
         var singleOpenInterfaces = new[]
         {
-            typeof(IRequestHandler<,>),
-            typeof(IRequestHandler<>),
-            typeof(IStreamRequestHandler<,>)
+            typeof(IConsumer<,>),
+            typeof(IConsumer<>),
+            typeof(IProvider<,>)
         };
 
         var multiOpenInterfaces = new List<Type>
         {
-            typeof(INotificationHandler<>),
-            typeof(IRequestExceptionHandler<,,>),
-            typeof(IRequestExceptionAction<,>)
+            typeof(ISubscriber<>),
+            typeof(IFallbackHandler<,,>),
+            typeof(IExceptionObserver<,>)
         };
 
-        if (configuration.AutoRegisterRequestProcessors)
+        if (configuration.AutoRegisterMessageProcessors)
         {
-            multiOpenInterfaces.Add(typeof(IRequestPreProcessor<>));
-            multiOpenInterfaces.Add(typeof(IRequestPostProcessor<,>));
+            multiOpenInterfaces.Add(typeof(IPreConsumer<>));
+            multiOpenInterfaces.Add(typeof(IPostConsumer<,>));
         }
 
         var allOpenInterfaces = singleOpenInterfaces.Concat(multiOpenInterfaces).ToHashSet();
@@ -71,55 +70,54 @@ internal static class ServiceRegistrar
         }
     }
 
-    public static void AddRequiredServices(IServiceCollection services, CqrsManagerServiceConfiguration cfg)
+    public static void AddRequiredServices(IServiceCollection services, HubServiceConfiguration cfg)
     {
-        services.TryAdd(new ServiceDescriptor(typeof(ICqrsManager), cfg.CqrsManagerImplementationType, cfg.Lifetime));
-        services.TryAdd(new ServiceDescriptor(typeof(ISender), sp => sp.GetRequiredService<ICqrsManager>(), cfg.Lifetime));
-        services.TryAdd(new ServiceDescriptor(typeof(IPublisher), sp => sp.GetRequiredService<ICqrsManager>(), cfg.Lifetime));
+        services.TryAdd(new ServiceDescriptor(typeof(IHubExchange), cfg.HubImplementationType, cfg.Lifetime));
+        services.TryAdd(new ServiceDescriptor(typeof(IDeliveryAgent), sp => sp.GetRequiredService<IHubExchange>(), cfg.Lifetime));
+        services.TryAdd(new ServiceDescriptor(typeof(IBroadcastAgent), sp => sp.GetRequiredService<IHubExchange>(), cfg.Lifetime));
 
-        var publisherDescriptor = cfg.NotificationPublisherType is not null
-            ? new ServiceDescriptor(typeof(INotificationPublisher), cfg.NotificationPublisherType, cfg.Lifetime)
-            : new ServiceDescriptor(typeof(INotificationPublisher), cfg.NotificationPublisher);
+        var strategyDescriptor = cfg.BroadcastStrategyType is not null
+            ? new ServiceDescriptor(typeof(IBroadcastStrategy), cfg.BroadcastStrategyType, cfg.Lifetime)
+            : new ServiceDescriptor(typeof(IBroadcastStrategy), cfg.BroadcastStrategy);
 
-        services.TryAdd(publisherDescriptor);
+        services.TryAdd(strategyDescriptor);
 
-        // Registration order determines pipeline order:
-        //   ApplyForUnhandledExceptions (default): actions → handlers (actions only fire if handler did not suppress)
-        //   ApplyForAllExceptions:                 handlers → actions (actions always fire)
-        if (cfg.RequestExceptionActionProcessorStrategy == RequestExceptionActionProcessorStrategy.ApplyForUnhandledExceptions)
+        // Exception Handling Order
+        if (cfg.ExceptionObservationStrategy == ExceptionObservationStrategy.ApplyForUnhandledExceptions)
         {
-            RegisterBehaviorIfImplementationsExist(services, typeof(RequestExceptionActionProcessorBehavior<,>), typeof(IRequestExceptionAction<,>));
-            RegisterBehaviorIfImplementationsExist(services, typeof(RequestExceptionProcessorBehavior<,>), typeof(IRequestExceptionHandler<,,>));
+            RegisterInterceptorIfExist(services, typeof(ExceptionObservationInterceptor<,>), typeof(IExceptionObserver<,>));
+            RegisterInterceptorIfExist(services, typeof(FallbackInterceptor<,>), typeof(IFallbackHandler<,,>));
         }
         else
         {
-            RegisterBehaviorIfImplementationsExist(services, typeof(RequestExceptionProcessorBehavior<,>), typeof(IRequestExceptionHandler<,,>));
-            RegisterBehaviorIfImplementationsExist(services, typeof(RequestExceptionActionProcessorBehavior<,>), typeof(IRequestExceptionAction<,>));
+            RegisterInterceptorIfExist(services, typeof(FallbackInterceptor<,>), typeof(IFallbackHandler<,,>));
+            RegisterInterceptorIfExist(services, typeof(ExceptionObservationInterceptor<,>), typeof(IExceptionObserver<,>));
         }
 
-        if (cfg.RequestPreProcessorsToRegister.Count > 0)
+        // Pre/Post Processors
+        if (cfg.PreConsumersToRegister.Count > 0)
         {
-            services.TryAddEnumerable(new ServiceDescriptor(typeof(IPipelineBehavior<,>), typeof(RequestPreProcessorBehavior<,>), ServiceLifetime.Transient));
-            services.TryAddEnumerable(cfg.RequestPreProcessorsToRegister);
+            services.TryAddEnumerable(new ServiceDescriptor(typeof(IInterceptor<,>), typeof(PreConsumptionInterceptor<,>), ServiceLifetime.Transient));
+            services.TryAddEnumerable(cfg.PreConsumersToRegister);
         }
 
-        if (cfg.RequestPostProcessorsToRegister.Count > 0)
+        if (cfg.PostConsumersToRegister.Count > 0)
         {
-            services.TryAddEnumerable(new ServiceDescriptor(typeof(IPipelineBehavior<,>), typeof(RequestPostProcessorBehavior<,>), ServiceLifetime.Transient));
-            services.TryAddEnumerable(cfg.RequestPostProcessorsToRegister);
+            services.TryAddEnumerable(new ServiceDescriptor(typeof(IInterceptor<,>), typeof(PostConsumptionInterceptor<,>), ServiceLifetime.Transient));
+            services.TryAddEnumerable(cfg.PostConsumersToRegister);
         }
 
-        foreach (var descriptor in cfg.BehaviorsToRegister)
+        foreach (var descriptor in cfg.InterceptorsToRegister)
             services.TryAddEnumerable(descriptor);
 
-        foreach (var descriptor in cfg.StreamBehaviorsToRegister)
+        foreach (var descriptor in cfg.StreamInterceptorsToRegister)
             services.TryAddEnumerable(descriptor);
     }
 
-    private static void RegisterBehaviorIfImplementationsExist(
+    private static void RegisterInterceptorIfExist(
         IServiceCollection services,
-        Type behaviorType,
-        Type subBehaviorType)
+        Type interceptorType,
+        Type subHandlerType)
     {
         var hasAny = services
             .Where(s => !s.IsKeyedService)
@@ -128,19 +126,15 @@ internal static class ServiceRegistrar
             .SelectMany(t => t.GetInterfaces())
             .Where(t => t.IsGenericType)
             .Select(t => t.GetGenericTypeDefinition())
-            .Any(t => t == subBehaviorType);
+            .Any(t => t == subHandlerType);
 
         if (hasAny)
         {
             services.TryAddEnumerable(new ServiceDescriptor(
-                typeof(IPipelineBehavior<,>), behaviorType, ServiceLifetime.Transient));
+                typeof(IInterceptor<,>), interceptorType, ServiceLifetime.Transient));
         }
     }
 
-    /// <summary>
-    /// Safely loads types from an assembly, swallowing <see cref="ReflectionTypeLoadException"/>
-    /// for types that cannot be loaded (e.g. missing transitive dependencies).
-    /// </summary>
     private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
     {
         try
