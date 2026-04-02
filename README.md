@@ -42,7 +42,7 @@ A high-performance, allocation-optimized, license-free CQRS implementation for .
 
 ## Why Kodexia.Cqrs?
 
-Kodexia.Cqrs is a production-grade, zero-licensing-cost alternative to MediatR. It provides **complete API parity** while addressing known performance and allocation bottlenecks:
+Kodexia.Cqrs is a production-grade, **zero-licensing-cost** alternative to MediatR. It provides **complete API parity** while addressing known performance and allocation bottlenecks:
 
 | Capability | Kodexia.Cqrs | MediatR |
 |---|---|---|
@@ -53,7 +53,8 @@ Kodexia.Cqrs is a production-grade, zero-licensing-cost alternative to MediatR. 
 | Pipeline behaviors | ✅ | ✅ |
 | Pre / Post processors | ✅ | ✅ |
 | Exception handlers + actions | ✅ | ✅ |
-| License requirement | ❌ None | ⚠️ Commercial license required |
+| **License requirement** | ❌ None | ⚠️ Commercial license key required |
+| **Separate contracts package** | ❌ Not needed — all contracts included | `MediatR.Contracts` for contract-only scenarios |
 | Reflection at call-time | ❌ Eliminated | ✅ Present |
 | Handler wrapper allocation | Cached `ConcurrentDictionary` | Cached `ConcurrentDictionary` |
 | Notification deduplication | `HashSet<Type>` — O(1) | `DistinctBy` — allocates grouping |
@@ -62,7 +63,8 @@ Kodexia.Cqrs is a production-grade, zero-licensing-cost alternative to MediatR. 
 **Design goals:**
 - **No reflection at dispatch time** — `MethodInfo.Invoke` is replaced with cached strongly-typed generic dispatchers.
 - **Iterative pipeline** — behaviors are composed with a closure-captured index instead of recursive delegates, reducing stack depth.
-- **Single package** — no separate `Abstractions` package required; install one package and start.
+- **Single package** — no separate `Abstractions` or `Contracts` package required; install one package and start.
+- **No license key** — MediatR now requires a [commercial license key](https://mediatr.io) for production use. Kodexia.Cqrs is MIT-licensed with zero restrictions.
 
 ---
 
@@ -564,55 +566,149 @@ public class OrderService(ICqrsManager cqrs) { … }
 
 ## MediatR Migration Guide
 
-Migrating from MediatR to Kodexia.Cqrs requires **only namespace changes**. All types are API-compatible.
+Migrating from MediatR to Kodexia.Cqrs requires minimal code changes. All core types are API-compatible. This guide covers every migration step.
 
-### 1. Update the package reference
+### 1. Update package references
 
 ```shell
 # Remove MediatR
 dotnet remove package MediatR
+
+# If migrating from MediatR v10 or earlier, also remove the legacy DI package:
 dotnet remove package MediatR.Extensions.Microsoft.DependencyInjection
+
+# If using the contracts-only package, remove it too (all contracts are included):
+dotnet remove package MediatR.Contracts
 
 # Add Kodexia.Cqrs
 dotnet add package Kodexia.Cqrs
 ```
+
+> [!NOTE]
+> MediatR v11+ consolidated `MediatR.Extensions.Microsoft.DependencyInjection` into the main package. If you're already on v11+, only `dotnet remove package MediatR` is needed. The `MediatR.Contracts` package (used for API contracts, gRPC, Blazor) is also replaced — `Kodexia.Cqrs` includes all contract interfaces (`IRequest`, `INotification`, `IStreamRequest`).
 
 ### 2. Update namespaces
 
 | MediatR | Kodexia.Cqrs |
 |---|---|
 | `using MediatR;` | `using Kodexia.Cqrs;` |
-| `using MediatR.Pipeline;` | `(included in Kodexia.Cqrs)` |
+| `using MediatR.Pipeline;` | *(included in `Kodexia.Cqrs`)* |
 
-### 3. Update registration
+### 3. Update DI registration
 
 ```diff
-- services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
-+ services.AddKodexiaCqrs(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
+- services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Startup>());
++ services.AddKodexiaCqrs(cfg => cfg.RegisterServicesFromAssemblyContaining<Startup>());
 ```
+
+MediatR's registration options map directly:
+
+```diff
+  services.AddMediatR(cfg => {
+-     cfg.RegisterServicesFromAssembly(typeof(Startup).Assembly);
+-     cfg.AddBehavior<PingPongBehavior>();
+-     cfg.AddStreamBehavior<PingPongStreamBehavior>();
+-     cfg.AddRequestPreProcessor<PingPreProcessor>();
+-     cfg.AddRequestPostProcessor<PingPongPostProcessor>();
+-     cfg.AddOpenBehavior(typeof(GenericBehavior<,>));
+  });
+
++ services.AddKodexiaCqrs(cfg => {
++     cfg.RegisterServicesFromAssembly(typeof(Startup).Assembly);
++     cfg.AddBehavior<PingPongBehavior>();
++     cfg.AddStreamBehavior<PingPongStreamBehavior>();
++     cfg.AddOpenRequestPreProcessor(typeof(PingPreProcessor<>));
++     cfg.AddOpenRequestPostProcessor(typeof(PingPongPostProcessor<,>));
++     cfg.AddOpenBehavior(typeof(GenericBehavior<,>));
++ });
+```
+
+> [!IMPORTANT]
+> MediatR requires a license key (`cfg.LicenseKey = "..."` or `Mediator.LicenseKey = "..."`). Kodexia.Cqrs has **no license key requirement** — remove any license key configuration.
 
 ### 4. Update handler method signatures
 
+All handler methods are renamed from `Handle` to `HandleAsync` to align with .NET async naming conventions:
+
+**Request handlers:**
 ```diff
 - public async Task<Guid> Handle(CreateOrderCommand request, CancellationToken ct)
 + public async Task<Guid> HandleAsync(CreateOrderCommand request, CancellationToken ct)
 ```
 
-> [!NOTE]
-> The handler method was renamed from `Handle` to `HandleAsync` to align with .NET async naming conventions. This is the only **breaking** API difference from MediatR.
+**Notification handlers:**
+```diff
+- public Task Handle(OrderShippedNotification notification, CancellationToken ct)
++ public Task HandleAsync(OrderShippedNotification notification, CancellationToken ct)
+```
 
-### 5. Update dispatch calls (if using IMediator directly)
+**Pipeline behaviors:**
+```diff
+- public async Task<TResponse> Handle(
++ public async Task<TResponse> HandleAsync(
+      TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
+```
+
+**Stream handlers:**
+```diff
+- public IAsyncEnumerable<TResponse> Handle(TRequest request, CancellationToken ct)
++ public IAsyncEnumerable<TResponse> HandleAsync(TRequest request, CancellationToken ct)
+```
+
+**Pre-processors:**
+```diff
+- public Task Process(TRequest request, CancellationToken ct)
++ public Task ProcessAsync(TRequest request, CancellationToken ct)
+```
+
+**Post-processors:**
+```diff
+- public Task Process(TRequest request, TResponse response, CancellationToken ct)
++ public Task ProcessAsync(TRequest request, TResponse response, CancellationToken ct)
+```
+
+### 5. Update dispatch calls
 
 ```diff
+  // IMediator → ISender / IPublisher / ICqrsManager
+- private readonly IMediator _mediator;
++ private readonly ISender _sender;       // or IPublisher / ICqrsManager
+
+  // Sending requests
 - await mediator.Send(command, ct);
 + await sender.SendAsync(command, ct);
 
+  // Publishing notifications
 - await mediator.Publish(notification, ct);
 + await publisher.PublishAsync(notification, ct);
 
+  // Creating streams
 - mediator.CreateStream(request, ct);
 + sender.CreateStreamAsync(request, ct);
 ```
+
+### 6. Quick reference — interface mapping
+
+| MediatR | Kodexia.Cqrs | Notes |
+|---|---|---|
+| `IMediator` | `ICqrsManager` | Combines `ISender` + `IPublisher` |
+| `ISender` | `ISender` | Same name |
+| `IPublisher` | `IPublisher` | Same name |
+| `IRequest<T>` | `IRequest<T>` | Same |
+| `IRequest` | `IRequest` | Same (void) |
+| `INotification` | `INotification` | Same |
+| `IStreamRequest<T>` | `IStreamRequest<T>` | Same |
+| `IRequestHandler<,>` | `IRequestHandler<,>` | Method: `Handle` → `HandleAsync` |
+| `INotificationHandler<>` | `INotificationHandler<>` | Method: `Handle` → `HandleAsync` |
+| `IStreamRequestHandler<,>` | `IStreamRequestHandler<,>` | Method: `Handle` → `HandleAsync` |
+| `IPipelineBehavior<,>` | `IPipelineBehavior<,>` | Method: `Handle` → `HandleAsync` |
+| `IStreamPipelineBehavior<,>` | `IStreamPipelineBehavior<,>` | Method: `Handle` → `HandleAsync` |
+| `IRequestPreProcessor<>` | `IRequestPreProcessor<>` | Method: `Process` → `ProcessAsync` |
+| `IRequestPostProcessor<,>` | `IRequestPostProcessor<,>` | Method: `Process` → `ProcessAsync` |
+| `IRequestExceptionHandler<,,>` | `IRequestExceptionHandler<,,>` | Method: `Handle` → `HandleAsync` |
+| `IRequestExceptionAction<,>` | `IRequestExceptionAction<,>` | Same (`Execute`) |
+| `Unit` | `Unit` | Same |
+| `NotificationHandler<T>` | `NotificationHandler<T>` | Same (sync base class) |
 
 ### Optional: adopt semantic interfaces
 

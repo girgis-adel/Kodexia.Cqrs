@@ -49,6 +49,9 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse> : RequestHa
         if (pipelines.Length == 0)
             return Handler();
 
+        // Iterative pipeline: behaviors are composed with a closure-captured index
+        // instead of recursive delegates, reducing stack depth. Note: calling `next`
+        // more than once from a single behavior is unsupported (the index advances).
         var index = 0;
 
         Task<TResponse> Next(CancellationToken t)
@@ -93,6 +96,7 @@ internal sealed class RequestHandlerWrapperImpl<TRequest> : RequestHandlerWrappe
         if (pipelines.Length == 0)
             return Handler();
 
+        // Iterative pipeline: see comment in RequestHandlerWrapperImpl<TRequest, TResponse>.
         var index = 0;
 
         Task<Unit> Next(CancellationToken t)

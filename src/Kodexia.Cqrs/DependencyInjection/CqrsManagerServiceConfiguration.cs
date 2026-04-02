@@ -20,7 +20,7 @@ public class CqrsManagerServiceConfiguration
     /// Gets or sets the concrete type used as the <see cref="ICqrsManager"/> implementation.
     /// Defaults to <see cref="CqrsManager"/>.
     /// </summary>
-    public Type MediatorImplementationType { get; set; } = typeof(CqrsManager);
+    public Type CqrsManagerImplementationType { get; set; } = typeof(CqrsManager);
 
     /// <summary>
     /// Gets or sets the notification publisher instance to use when <see cref="NotificationPublisherType"/> is not set.
@@ -145,7 +145,7 @@ public class CqrsManagerServiceConfiguration
     /// An open generic type (e.g., <c>typeof(LoggingBehavior&lt;,&gt;)</c>) that implements
     /// <see cref="IPipelineBehavior{TRequest, TResponse}"/>.
     /// </param>
-    /// <param name="serviceLifetime"></param>
+    /// <param name="serviceLifetime">The DI lifetime for the registered behavior. Defaults to <see cref="ServiceLifetime.Transient"/>.</param>
     public CqrsManagerServiceConfiguration AddOpenBehavior(
         Type openBehaviorType,
         ServiceLifetime serviceLifetime = ServiceLifetime.Transient)

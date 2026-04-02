@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -36,7 +37,7 @@ internal static class ServiceRegistrar
         var allOpenInterfaces = singleOpenInterfaces.Concat(multiOpenInterfaces).ToHashSet();
 
         var concretions = assembliesToScan
-            .SelectMany(a => a.GetTypes())
+            .SelectMany(GetLoadableTypes)
             .Where(t => t.IsClass && !t.IsAbstract)
             .Where(configuration.TypeEvaluator)
             .ToList();
@@ -70,7 +71,7 @@ internal static class ServiceRegistrar
 
     public static void AddRequiredServices(IServiceCollection services, CqrsManagerServiceConfiguration cfg)
     {
-        services.TryAdd(new ServiceDescriptor(typeof(ICqrsManager), cfg.MediatorImplementationType, cfg.Lifetime));
+        services.TryAdd(new ServiceDescriptor(typeof(ICqrsManager), cfg.CqrsManagerImplementationType, cfg.Lifetime));
         services.TryAdd(new ServiceDescriptor(typeof(ISender), sp => sp.GetRequiredService<ICqrsManager>(), cfg.Lifetime));
         services.TryAdd(new ServiceDescriptor(typeof(IPublisher), sp => sp.GetRequiredService<ICqrsManager>(), cfg.Lifetime));
 
@@ -80,6 +81,9 @@ internal static class ServiceRegistrar
 
         services.TryAdd(publisherDescriptor);
 
+        // Registration order determines pipeline order:
+        //   ApplyForUnhandledExceptions (default): actions → handlers (actions only fire if handler did not suppress)
+        //   ApplyForAllExceptions:                 handlers → actions (actions always fire)
         if (cfg.RequestExceptionActionProcessorStrategy == RequestExceptionActionProcessorStrategy.ApplyForUnhandledExceptions)
         {
             RegisterBehaviorIfImplementationsExist(services, typeof(RequestExceptionActionProcessorBehavior<,>), typeof(IRequestExceptionAction<,>));
@@ -128,6 +132,22 @@ internal static class ServiceRegistrar
         {
             services.TryAddEnumerable(new ServiceDescriptor(
                 typeof(IPipelineBehavior<,>), behaviorType, ServiceLifetime.Transient));
+        }
+    }
+
+    /// <summary>
+    /// Safely loads types from an assembly, swallowing <see cref="ReflectionTypeLoadException"/>
+    /// for types that cannot be loaded (e.g. missing transitive dependencies).
+    /// </summary>
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.Where(t => t is not null)!;
         }
     }
 }

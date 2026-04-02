@@ -53,11 +53,11 @@ public sealed class OpenBehavior
     {
         ArgumentNullException.ThrowIfNull(openBehaviorType);
 
-        if (!openBehaviorType.IsGenericType)
+        if (!openBehaviorType.IsGenericTypeDefinition)
         {
             throw new InvalidOperationException(
-                $"The type '{openBehaviorType.Name}' must be a generic type definition " +
-                $"(e.g., typeof(MyBehavior<,>)).");
+                $"The type '{openBehaviorType.Name}' must be an open generic type definition " +
+                $"(e.g., typeof(MyBehavior<,>)). Closed generic types are not allowed.");
         }
 
         var isPipelineBehavior = openBehaviorType.GetInterfaces()

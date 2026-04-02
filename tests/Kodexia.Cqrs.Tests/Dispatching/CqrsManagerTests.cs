@@ -111,6 +111,52 @@ public class CqrsManagerTests
             result.Should().Be("warm-pong");
         }
     }
+
+    // ─── Null Guard Tests ───────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SendAsync_WithNullRequest_ThrowsArgumentNullException()
+    {
+        var manager = BuildManager(cfg =>
+            cfg.RegisterServicesFromAssemblyContaining<CqrsManagerTests>());
+
+        var act = async () => await manager.SendAsync((IRequest<string>)null!);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithNullNotification_ThrowsArgumentNullException()
+    {
+        var manager = BuildManager(cfg =>
+            cfg.RegisterServicesFromAssemblyContaining<CqrsManagerTests>());
+
+        var act = async () => await manager.PublishAsync((object)null!);
+
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithNonINotification_ThrowsArgumentException()
+    {
+        var manager = BuildManager(cfg =>
+            cfg.RegisterServicesFromAssemblyContaining<CqrsManagerTests>());
+
+        var act = async () => await manager.PublishAsync("not-a-notification");
+
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task SendAsync_Untyped_VoidRequest_ReturnsBoxedUnit()
+    {
+        var manager = BuildManager(cfg =>
+            cfg.RegisterServicesFromAssemblyContaining<CqrsManagerTests>());
+
+        var result = await manager.SendAsync((object)new NoopCommand());
+
+        result.Should().Be(Unit.Value);
+    }
 }
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
